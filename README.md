@@ -2,17 +2,21 @@
 
 Run Claude Code inside a Docker container with full permissions (`--dangerously-skip-permissions`). Claude can freely install packages, run commands, and use tools inside the container without affecting your host system. Only explicitly mounted folders are accessible.
 
-## Setup
-
-Just run:
+## Install
 
 ```bash
-./claude.sh
+git clone https://github.com/iurimatias/claude-docker.git ~/.claude-docker
+cd ~/.claude-docker
+sudo ln -sf "$(pwd)/claude.sh" /usr/local/bin/claude-docker
 ```
+
+Then just run `claude-docker` from any directory.
+
+## Setup
 
 The image will be built automatically on first run and **rebuilt automatically** whenever the Dockerfile changes. Claude Code will prompt you to log in on first use (OAuth). Your credentials are persisted in `~/.claude` so you only need to log in once.
 
-Alternatively, if you have an API key, set it before running:
+Alternatively, if you have an Anthropic API key (to use your own API credits instead of a Claude Code subscription), set it before running:
 
 ```bash
 export ANTHROPIC_API_KEY=your-key-here
@@ -77,6 +81,7 @@ Claude has full access inside the container and can install anything it needs at
 
 - `apt-get install` system packages
 - `npm install` / `pip install` dependencies
+- `nix-env -i` packages (Nix is pre-installed)
 - Install and run browsers via Playwright (`npx playwright install --with-deps chromium`)
 
 These installs are ephemeral — the container is removed after each session, so nothing persists between runs.
@@ -131,10 +136,6 @@ The mounted workspace must be a git repo. Claude handles creating/cleaning up th
 
 The image is rebuilt automatically when the Dockerfile changes — no need to manually run `docker build`. Use `--rebuild` to force a rebuild at any time.
 
-## Global Alias
+## Tips
 
-To make `claude-docker` available everywhere, add to your `~/.zshrc`:
-
-```bash
-alias claude-docker="/path/to/claude.sh"
-```
+- Press **Ctrl+J** to insert a newline in the input field (instead of submitting).
