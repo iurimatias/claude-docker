@@ -63,6 +63,8 @@ When run without extra arguments, you get an interactive Claude Code CLI session
 | `--no-network` | Disable network access (fully offline sandbox) |
 | `--worktree NAME` | Run in a git worktree (isolated branch + working dir) |
 | `--worktree-base DIR` | Base directory for worktrees (default: parent of project) |
+| `-H` | Tmux horizontal split with a container shell |
+| `-V` | Tmux vertical split with a container shell |
 | `--sessions` | List and manage saved sessions |
 | `--rebuild` | Force rebuild the Docker image |
 | `-h, --help` | Show help message |
@@ -83,6 +85,23 @@ claude-docker --worktree feature-auth
 # Force rebuild the image
 claude-docker --rebuild
 ```
+
+## Tmux Split Pane
+
+Use `-H` or `-V` to open a second tmux pane with a shell inside the container. Useful for running builds, tests, or inspecting files while Claude works.
+
+```bash
+# Horizontal split (side by side)
+claude-docker -H
+
+# Vertical split (stacked)
+claude-docker -V
+
+# Combine with other flags
+claude-docker -V --worktree feature-auth --memory 8g
+```
+
+Requires running inside a tmux session.
 
 ## How Mounting Works
 

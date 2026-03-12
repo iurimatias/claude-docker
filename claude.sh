@@ -17,6 +17,8 @@ Options:
   --no-network     Disable network access inside the container
   --worktree NAME  Run in a git worktree (isolated branch + working dir)
   --worktree-base DIR  Base directory for worktrees (default: parent of project)
+  -H               Open a tmux horizontal split with a container shell
+  -V               Open a tmux vertical split with a container shell
   --sessions       List and manage saved sessions
   --rebuild        Force rebuild the Docker image
   -h, --help       Show this help message
@@ -96,6 +98,7 @@ no_network=false
 force_rebuild=false
 worktree_name=""
 worktree_base=""
+tmux_split=""
 positional=()
 
 while [ $# -gt 0 ]; do
@@ -131,6 +134,14 @@ while [ $# -gt 0 ]; do
         --worktree-base)
             worktree_base="$2"
             shift 2
+            ;;
+        -H)
+            tmux_split="-h"
+            shift
+            ;;
+        -V)
+            tmux_split="-v"
+            shift
             ;;
         --rebuild)
             force_rebuild=true
@@ -356,6 +367,95 @@ echo -e "  Network:   \033[31mdisabled\033[0m"
 fi
 echo -e "\033[1;34m=========================================\033[0m"
 echo ""
+
+# --- Tmux/iTerm2 split: open a shell pane into the container ---
+if [ -n "$tmux_split" ]; then
+    shell_cmd="echo 'Waiting for container $CONTAINER_NAME...'; \
+         while ! docker inspect '$CONTAINER_NAME' &>/dev/null; do sleep 0.3; done; \
+         while [ \"\$(docker inspect --format='{{.State.Running}}' '$CONTAINER_NAME' 2>/dev/null)\" != 'true' ]; do sleep 0.3; done; \
+         echo 'Connected.'; \
+         docker exec -it '$CONTAINER_NAME' bash; \
+         echo 'Container exited. Press enter to close.'; read"
+
+    if [ -n "${TMUX:-}" ]; then
+        # Already in tmux — just split the current pane
+        tmux split-window "$tmux_split" -c "$(pwd)" "$shell_cmd"
+    elif command -v tmux &>/dev/null; then
+        # Not in tmux but tmux is available — start a new session
+        tmux_session="claude-$$"
+        tmux new-session -d -s "$tmux_session" -c "$(pwd)" "$shell_cmd"
+        # Re-run ourselves without the split flag in the other pane
+        relaunch_args=()
+        for arg in "${positional[@]+"${positional[@]}"}"; do
+            relaunch_args+=("$arg")
+        done
+        [ -n "$memory_limit" ] && relaunch_args+=(--memory "$memory_limit")
+        $gpu_flag && relaunch_args+=(--gpu)
+        $no_network && relaunch_args+=(--no-network)
+        [ -n "$worktree_name" ] && relaunch_args+=(--worktree "$worktree_name")
+        [ -n "$worktree_base" ] && relaunch_args+=(--worktree-base "$worktree_base")
+        $force_rebuild && relaunch_args+=(--rebuild)
+        if [ ${#claude_args[@]} -gt 0 ]; then
+            relaunch_args+=(--)
+            relaunch_args+=("${claude_args[@]}")
+        fi
+        tmux split-window "$tmux_split" -c "$(pwd)" -t "$tmux_session" \
+            "$SCRIPT_DIR/claude.sh ${relaunch_args[*]+"${relaunch_args[*]}"}"
+        if [ "${TERM_PROGRAM:-}" = "iTerm.app" ]; then
+            tmux -CC attach -t "$tmux_session"
+        else
+            tmux attach -t "$tmux_session"
+        fi
+        exit $?
+    elif [ "$(uname)" = "Darwin" ] && [ "${TERM_PROGRAM:-}" = "iTerm.app" ]; then
+        # No tmux, but running in iTerm2 on macOS — use AppleScript
+        split_direction="vertically"
+        [ "$tmux_split" = "-h" ] && split_direction="horizontally"
+        # Write shell command to a temp script to avoid quoting issues
+        split_script=$(mktemp /tmp/claude-split-XXXXXXXXXXXX.sh)
+        cat > "$split_script" <<SPLITEOF
+#!/usr/bin/env bash
+export PATH="/usr/local/bin:/opt/homebrew/bin:\$PATH"
+CONTAINER='$CONTAINER_NAME'
+echo "Waiting for container \$CONTAINER..."
+for i in \$(seq 1 300); do
+    if docker inspect "\$CONTAINER" &>/dev/null; then
+        break
+    fi
+    sleep 0.5
+done
+if ! docker inspect "\$CONTAINER" &>/dev/null; then
+    echo "Timed out waiting for container \$CONTAINER"
+    echo "Press enter to close."
+    read
+    exit 1
+fi
+while [ "\$(docker inspect --format='{{.State.Running}}' "\$CONTAINER" 2>/dev/null)" != 'true' ]; do sleep 0.3; done
+echo 'Connected.'
+docker exec -it "\$CONTAINER" bash
+echo 'Container exited. Press enter to close.'
+read
+rm -f '$split_script'
+SPLITEOF
+        chmod +x "$split_script"
+        applescript_err=$(osascript -e "
+            tell application \"iTerm2\"
+                tell current session of current tab of current window
+                    split $split_direction with default profile command \"$split_script\"
+                end tell
+            end tell
+        " 2>&1) || {
+            echo "Error: iTerm2 AppleScript split failed:"
+            echo "$applescript_err"
+            echo ""
+            echo "Tip: Install tmux for reliable splits: brew install tmux"
+            rm -f "$split_script"
+        }
+    else
+        echo "Error: -H/-V requires tmux (brew install tmux) or iTerm2 on macOS."
+        exit 1
+    fi
+fi
 
 # --- Run ---
 docker run \
