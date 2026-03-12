@@ -47,8 +47,8 @@ ENV PATH="/home/node/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
 # Source nix profile in bash so interactive shells pick it up
 RUN echo '. /home/node/.nix-profile/etc/profile.d/nix.sh' >> /home/node/.bashrc
 
-# Set up zsh as default shell
-RUN sudo chsh -s /usr/bin/zsh node
+# Keep bash as default shell (Claude Code uses it internally)
+# zsh is available for interactive sessions via docker exec
 
 # Configure zsh
 COPY --chown=node:node zshrc /home/node/.zshrc
