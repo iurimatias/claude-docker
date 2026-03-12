@@ -15,6 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     sudo \
     xz-utils \
+    zsh \
+    tmux \
+    neovim \
+    jq \
+    fzf \
+    fd-find \
+    ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code globally
@@ -39,6 +46,12 @@ RUN curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
 ENV PATH="/home/node/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
 # Source nix profile in bash so interactive shells pick it up
 RUN echo '. /home/node/.nix-profile/etc/profile.d/nix.sh' >> /home/node/.bashrc
+
+# Set up zsh as default shell
+RUN sudo chsh -s /usr/bin/zsh node
+
+# Configure zsh
+COPY --chown=node:node zshrc /home/node/.zshrc
 
 WORKDIR /workspace
 

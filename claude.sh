@@ -391,7 +391,7 @@ if [ -n "$tmux_split" ]; then
              while ! docker inspect '$CONTAINER_NAME' &>/dev/null; do sleep 0.3; done; \
              while [ \"\$(docker inspect --format='{{.State.Running}}' '$CONTAINER_NAME' 2>/dev/null)\" != 'true' ]; do sleep 0.3; done; \
              echo 'Connected.'; \
-             docker exec -it '$CONTAINER_NAME' bash; \
+             docker exec -it '$CONTAINER_NAME' zsh; \
              echo 'Container exited. Press enter to close.'; read"
     fi
 
@@ -459,7 +459,7 @@ if ! docker inspect "\$CONTAINER" &>/dev/null; then
 fi
 while [ "\$(docker inspect --format='{{.State.Running}}' "\$CONTAINER" 2>/dev/null)" != 'true' ]; do sleep 0.3; done
 echo 'Connected.'
-docker exec -it "\$CONTAINER" bash
+docker exec -it "\$CONTAINER" zsh
 echo 'Container exited. Press enter to close.'
 read
 rm -f '$split_script'
