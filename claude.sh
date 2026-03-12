@@ -17,8 +17,10 @@ Options:
   --no-network     Disable network access inside the container
   --worktree NAME  Run in a git worktree (isolated branch + working dir)
   --worktree-base DIR  Base directory for worktrees (default: parent of project)
-  -H               Open a tmux horizontal split with a container shell
-  -V               Open a tmux vertical split with a container shell
+  -H               Horizontal split with container shell
+  -V               Vertical split with container shell
+  -HH              Horizontal split with host terminal
+  -VV              Vertical split with host terminal
   --sessions       List and manage saved sessions
   --rebuild        Force rebuild the Docker image
   -h, --help       Show this help message
@@ -137,10 +139,22 @@ while [ $# -gt 0 ]; do
             ;;
         -H)
             tmux_split="-h"
+            split_mode="docker"
             shift
             ;;
         -V)
             tmux_split="-v"
+            split_mode="docker"
+            shift
+            ;;
+        -HH)
+            tmux_split="-h"
+            split_mode="host"
+            shift
+            ;;
+        -VV)
+            tmux_split="-v"
+            split_mode="host"
             shift
             ;;
         --rebuild)
@@ -368,14 +382,18 @@ fi
 echo -e "\033[1;34m=========================================\033[0m"
 echo ""
 
-# --- Tmux/iTerm2 split: open a shell pane into the container ---
+# --- Tmux/iTerm2 split: open a pane ---
 if [ -n "$tmux_split" ]; then
-    shell_cmd="echo 'Waiting for container $CONTAINER_NAME...'; \
-         while ! docker inspect '$CONTAINER_NAME' &>/dev/null; do sleep 0.3; done; \
-         while [ \"\$(docker inspect --format='{{.State.Running}}' '$CONTAINER_NAME' 2>/dev/null)\" != 'true' ]; do sleep 0.3; done; \
-         echo 'Connected.'; \
-         docker exec -it '$CONTAINER_NAME' bash; \
-         echo 'Container exited. Press enter to close.'; read"
+    if [ "${split_mode:-docker}" = "host" ]; then
+        shell_cmd="exec ${SHELL:-bash}"
+    else
+        shell_cmd="echo 'Waiting for container $CONTAINER_NAME...'; \
+             while ! docker inspect '$CONTAINER_NAME' &>/dev/null; do sleep 0.3; done; \
+             while [ \"\$(docker inspect --format='{{.State.Running}}' '$CONTAINER_NAME' 2>/dev/null)\" != 'true' ]; do sleep 0.3; done; \
+             echo 'Connected.'; \
+             docker exec -it '$CONTAINER_NAME' bash; \
+             echo 'Container exited. Press enter to close.'; read"
+    fi
 
     if [ -n "${TMUX:-}" ]; then
         # Already in tmux — just split the current pane
@@ -413,9 +431,18 @@ if [ -n "$tmux_split" ]; then
         [ "$tmux_split" = "-h" ] && split_direction="horizontally"
         # Write shell command to a temp script to avoid quoting issues
         split_script=$(mktemp /tmp/claude-split-XXXXXXXXXXXX.sh)
-        cat > "$split_script" <<SPLITEOF
+        if [ "${split_mode:-docker}" = "host" ]; then
+            cat > "$split_script" <<SPLITEOF
+#!/usr/bin/env bash
+cd '$(pwd)'
+rm -f '$split_script'
+exec ${SHELL:-bash}
+SPLITEOF
+        else
+            cat > "$split_script" <<SPLITEOF
 #!/usr/bin/env bash
 export PATH="/usr/local/bin:/opt/homebrew/bin:\$PATH"
+cd '$(pwd)'
 CONTAINER='$CONTAINER_NAME'
 echo "Waiting for container \$CONTAINER..."
 for i in \$(seq 1 300); do
@@ -437,6 +464,7 @@ echo 'Container exited. Press enter to close.'
 read
 rm -f '$split_script'
 SPLITEOF
+        fi
         chmod +x "$split_script"
         applescript_err=$(osascript -e "
             tell application \"iTerm2\"

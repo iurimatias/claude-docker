@@ -63,8 +63,10 @@ When run without extra arguments, you get an interactive Claude Code CLI session
 | `--no-network` | Disable network access (fully offline sandbox) |
 | `--worktree NAME` | Run in a git worktree (isolated branch + working dir) |
 | `--worktree-base DIR` | Base directory for worktrees (default: parent of project) |
-| `-H` | Tmux horizontal split with a container shell |
-| `-V` | Tmux vertical split with a container shell |
+| `-H` | Horizontal split with container shell |
+| `-V` | Vertical split with container shell |
+| `-HH` | Horizontal split with host terminal |
+| `-VV` | Vertical split with host terminal |
 | `--sessions` | List and manage saved sessions |
 | `--rebuild` | Force rebuild the Docker image |
 | `-h, --help` | Show help message |
@@ -91,17 +93,20 @@ claude-docker --rebuild
 Use `-H` or `-V` to open a second tmux pane with a shell inside the container. Useful for running builds, tests, or inspecting files while Claude works.
 
 ```bash
-# Horizontal split (side by side)
+# Horizontal split with container shell
 claude-docker -H
 
-# Vertical split (stacked)
+# Vertical split with container shell
 claude-docker -V
+
+# Split with a host terminal instead
+claude-docker -VV
 
 # Combine with other flags
 claude-docker -V --worktree feature-auth --memory 8g
 ```
 
-Requires running inside a tmux session.
+Works with tmux (installed or already running) and falls back to iTerm2 native splits on macOS.
 
 ## How Mounting Works
 
