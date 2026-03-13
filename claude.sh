@@ -384,8 +384,9 @@ echo ""
 
 # --- Tmux/iTerm2 split: open a pane ---
 if [ -n "$tmux_split" ]; then
+    split_dir="$abs_workdir"
     if [ "${split_mode:-docker}" = "host" ]; then
-        shell_cmd="exec ${SHELL:-bash}"
+        shell_cmd="cd '$split_dir' && echo -e '\033[1;34m📂 $split_dir\033[0m' && echo '' && exec ${SHELL:-bash}"
     else
         shell_cmd="echo 'Waiting for container $CONTAINER_NAME...'; \
              while ! docker inspect '$CONTAINER_NAME' &>/dev/null; do sleep 0.3; done; \
@@ -397,11 +398,11 @@ if [ -n "$tmux_split" ]; then
 
     if [ -n "${TMUX:-}" ]; then
         # Already in tmux — just split the current pane
-        tmux split-window "$tmux_split" -c "$(pwd)" "$shell_cmd"
+        tmux split-window "$tmux_split" -c "$split_dir" "$shell_cmd"
     elif command -v tmux &>/dev/null; then
         # Not in tmux but tmux is available — start a new session
         tmux_session="claude-$$"
-        tmux new-session -d -s "$tmux_session" -c "$(pwd)" "$shell_cmd"
+        tmux new-session -d -s "$tmux_session" -c "$split_dir" "$shell_cmd"
         # Re-run ourselves without the split flag in the other pane
         relaunch_args=()
         for arg in "${positional[@]+"${positional[@]}"}"; do
@@ -434,7 +435,9 @@ if [ -n "$tmux_split" ]; then
         if [ "${split_mode:-docker}" = "host" ]; then
             cat > "$split_script" <<SPLITEOF
 #!/usr/bin/env bash
-cd '$(pwd)'
+cd '$split_dir'
+echo -e '\033[1;34m📂 $split_dir\033[0m'
+echo ''
 rm -f '$split_script'
 exec ${SHELL:-bash}
 SPLITEOF
@@ -442,7 +445,7 @@ SPLITEOF
             cat > "$split_script" <<SPLITEOF
 #!/usr/bin/env bash
 export PATH="/usr/local/bin:/opt/homebrew/bin:\$PATH"
-cd '$(pwd)'
+cd '$split_dir'
 CONTAINER='$CONTAINER_NAME'
 echo "Waiting for container \$CONTAINER..."
 for i in \$(seq 1 300); do
