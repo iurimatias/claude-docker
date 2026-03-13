@@ -430,7 +430,7 @@ if [ -n "$tmux_split" ]; then
         split_direction="vertically"
         [ "$tmux_split" = "-h" ] && split_direction="horizontally"
         # Write shell command to a temp script to avoid quoting issues
-        split_script=$(mktemp /tmp/claude-split-XXXXXXXXXXXX.sh)
+        split_script="/tmp/claude-split-$$.sh"
         if [ "${split_mode:-docker}" = "host" ]; then
             cat > "$split_script" <<SPLITEOF
 #!/usr/bin/env bash
