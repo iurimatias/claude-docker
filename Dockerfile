@@ -87,6 +87,8 @@ RUN printf '%s\n' '#!/usr/bin/env bash' \
     'disk=$(df -h /workspace | awk "NR==2{print \$4}")' \
     'nix=$(grep -oP "experimental-features\s*=\s*\K.*" ~/.config/nix/nix.conf 2>/dev/null || echo "none")' \
     'printf "\033[90m  VM: %s cpus | %s ram | %s shm | %s tmp | %s disk free | nix: %s\033[0m\n" "$cpus" "$mem" "$shm" "$tmp" "$disk" "$nix"' \
+    '# Fix bind-mount ownership so git can write to submodule object databases' \
+    '[ -d /workspace/.git/modules ] && sudo chown -R node:node /workspace/.git/modules' \
     'exec /usr/local/bin/claude --dangerously-skip-permissions "$@"' \
     > /home/node/entrypoint.sh && chmod +x /home/node/entrypoint.sh
 
