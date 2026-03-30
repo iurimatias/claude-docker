@@ -7,6 +7,9 @@ setopt SHARE_HISTORY HIST_IGNORE_DUPS
 # Nix
 [ -f ~/.nix-profile/etc/profile.d/nix.sh ] && . ~/.nix-profile/etc/profile.d/nix.sh
 
+# Build parallelism — use all available CPUs
+export MAKEFLAGS="-j$(nproc)"
+
 # Prompt
 PROMPT='%F{blue}%~%f %F{green}❯%f '
 

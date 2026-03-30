@@ -21,15 +21,22 @@ Options:
   -V               Vertical split with container shell
   -HH              Horizontal split with host terminal
   -VV              Vertical split with host terminal
+  --nix MODE       Nix store mode: "shared" (default) or "copy" (per-project)
   --sessions       List and manage saved sessions
   --rebuild        Force rebuild the Docker image
   -h, --help       Show this help message
+
+Nix store modes:
+  shared  All containers share one Nix store volume (fast, space-efficient)
+  copy    Each project gets its own Nix store + shared binary cache
+          Safe for concurrent containers; new builds sync to shared cache
 
 Examples:
   ./claude.sh                              # Current dir, default settings
   ./claude.sh --memory 8g /path/to/project
   ./claude.sh --gpu --memory 16g .
   ./claude.sh --no-network .               # Fully offline/sandboxed
+  ./claude.sh --nix copy .                 # Isolated Nix store with shared cache
   ./claude.sh --worktree feature-auth      # Isolated worktree session
   ./claude.sh --sessions                   # Manage saved sessions
   ./claude.sh /path/to/project -- -p "fix the tests"
@@ -100,6 +107,7 @@ no_network=false
 force_rebuild=false
 worktree_name=""
 worktree_base=""
+nix_mode="shared"
 tmux_split=""
 positional=()
 
@@ -135,6 +143,14 @@ while [ $# -gt 0 ]; do
             ;;
         --worktree-base)
             worktree_base="$2"
+            shift 2
+            ;;
+        --nix)
+            nix_mode="${2:-shared}"
+            if [ "$nix_mode" != "shared" ] && [ "$nix_mode" != "copy" ]; then
+                echo "Error: --nix must be 'shared' or 'copy'" >&2
+                exit 1
+            fi
             shift 2
             ;;
         -H)
@@ -379,6 +395,9 @@ fi
 if $no_network; then
 echo -e "  Network:   \033[31mdisabled\033[0m"
 fi
+if [ "$nix_mode" = "copy" ]; then
+echo -e "  Nix:       \033[33mcopy (per-project + shared cache)\033[0m"
+fi
 echo -e "\033[1;34m=========================================\033[0m"
 echo ""
 
@@ -413,6 +432,7 @@ if [ -n "$tmux_split" ]; then
         $no_network && relaunch_args+=(--no-network)
         [ -n "$worktree_name" ] && relaunch_args+=(--worktree "$worktree_name")
         [ -n "$worktree_base" ] && relaunch_args+=(--worktree-base "$worktree_base")
+        [ "$nix_mode" != "shared" ] && relaunch_args+=(--nix "$nix_mode")
         $force_rebuild && relaunch_args+=(--rebuild)
         if [ ${#claude_args[@]} -gt 0 ]; then
             relaunch_args+=(--)
@@ -488,16 +508,31 @@ SPLITEOF
     fi
 fi
 
+# --- Nix volume mounts ---
+nix_args=()
+nix_project_vol=""
+if [ "$nix_mode" = "copy" ]; then
+    # Per-project Nix store + shared binary cache
+    nix_project_vol="claude-nix-${dir_basename}"
+    nix_args+=(-v "${nix_project_vol}:/nix")
+    nix_args+=(-v "claude-nix-cache:/nix-cache")
+else
+    # Shared Nix store (default)
+    nix_args+=(-v "claude-nix-store:/nix")
+fi
+
 # --- Run ---
 docker run \
     "${run_args[@]}" \
     --name "$CONTAINER_NAME" \
     -w "$workdir" \
-    --tmpfs /tmp:size=2G \
+    --shm-size 4g \
+    --tmpfs /tmp:size=8G \
     -e TERM="$TERM" \
     ${env_args[@]+"${env_args[@]}"} \
     -v "$HOME/.claude:/home/node/.claude" \
     -v "$HOME/.claude.json:/home/node/.claude.json" \
+    "${nix_args[@]}" \
     "${mount_args[@]}" \
     "$IMAGE_NAME" \
     ${claude_args[@]+"${claude_args[@]}"}
@@ -537,6 +572,17 @@ if docker inspect "$CONTAINER_NAME" &>/dev/null; then
 
     # Clean up container
     docker rm "$CONTAINER_NAME" &>/dev/null || true
+fi
+
+# --- Sync Nix store to shared binary cache (copy mode) ---
+if [ "$nix_mode" = "copy" ] && [ -n "$nix_project_vol" ]; then
+    echo "Syncing Nix store to shared cache..."
+    docker run --rm \
+        -v "${nix_project_vol}:/nix" \
+        -v "claude-nix-cache:/nix-cache" \
+        "$IMAGE_NAME" \
+        bash -c '. /home/node/.nix-profile/etc/profile.d/nix.sh && nix copy --to file:///nix-cache --all --no-check-sigs 2>/dev/null' \
+        || echo "Warning: Nix cache sync failed (non-fatal)"
 fi
 
 exit "$EXIT_CODE"
