@@ -40,19 +40,27 @@ RUN mkdir -p /nix /nix-cache && chown -R node:node /nix /nix-cache
 
 # Build parallelism: use all available cores for make/gcc/node
 # MAKEFLAGS is set in .bashrc since ENV doesn't expand $(nproc)
-ENV NODE_OPTIONS="--max-old-space-size=8192" \
-    PATH="/home/node/.local/bin:$PATH"
+ENV NODE_OPTIONS="--max-old-space-size=8192"
 
 # Switch to node user
 USER node
 
 # Install Nix in single-user mode as the node user
 RUN curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
-ENV PATH="/home/node/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
+ENV PATH="/home/node/.local/bin:/home/node/.nix-profile/bin:/nix/var/nix/profiles/default/bin:$PATH"
 # Source nix profile in bash so interactive shells pick it up
 # MAKEFLAGS uses runtime nproc so it reflects actual container CPU allocation
 RUN echo '. /home/node/.nix-profile/etc/profile.d/nix.sh' >> /home/node/.bashrc && \
     echo 'export MAKEFLAGS="-j$(nproc)"' >> /home/node/.bashrc
+
+# Quiet nix wrapper — injects --quiet unless -v/--verbose is passed
+RUN mkdir -p /home/node/.local/bin && \
+    printf '%s\n' '#!/usr/bin/env bash' \
+    'for arg in "$@"; do' \
+    '  case "$arg" in -v|--verbose) exec /home/node/.nix-profile/bin/nix "$@" ;; esac' \
+    'done' \
+    'exec /home/node/.nix-profile/bin/nix --quiet "$@"' \
+    > /home/node/.local/bin/nix && chmod +x /home/node/.local/bin/nix
 
 # Configure Nix: local binary cache + parallel builds
 RUN mkdir -p /home/node/.config/nix && \
