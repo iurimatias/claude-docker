@@ -23,6 +23,7 @@ Options:
   -VV              Vertical split with host terminal
   --nix MODE       Nix store mode: "shared" (default) or "copy" (per-project)
   --sessions       List and manage saved sessions
+  --no-litellm     Skip LiteLLM proxy even if one is running
   --rebuild        Force rebuild the Docker image
   -h, --help       Show this help message
 
@@ -104,6 +105,7 @@ manage_sessions() {
 memory_limit=""
 gpu_flag=false
 no_network=false
+no_litellm=false
 force_rebuild=false
 worktree_name=""
 worktree_base=""
@@ -129,6 +131,10 @@ while [ $# -gt 0 ]; do
             ;;
         --no-network)
             no_network=true
+            shift
+            ;;
+        --no-litellm)
+            no_litellm=true
             shift
             ;;
         --worktree)
@@ -374,6 +380,58 @@ fi
 dir_basename=$(basename "$abs_workdir" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
 CONTAINER_NAME="claude-${dir_basename}-$$"
 
+# --- LiteLLM proxy: connect if running ---
+litellm_connected=false
+VIRTUAL_KEY=""
+LITELLM_CONTAINER="${LITELLM_CONTAINER:-litellm}"
+LITELLM_NET="${LITELLM_NETWORK:-litellm-net}"
+LITELLM_PORT="${LITELLM_PORT:-4000}"
+if ! $no_litellm && ! $no_network; then
+    if docker inspect "$LITELLM_CONTAINER" --format='{{.State.Running}}' 2>/dev/null | grep -q true; then
+        litellm_key_file="${LITELLM_DATA_DIR:-$HOME/.litellm}/master-key"
+        if [ -f "$litellm_key_file" ]; then
+            LITELLM_KEY=$(cat "$litellm_key_file")
+            run_args+=(--network "$LITELLM_NET")
+            env_args+=(-e ANTHROPIC_BASE_URL="http://$LITELLM_CONTAINER:4000")
+
+            # Try to create a per-session virtual key for usage tracking
+            vk_response=$(curl -sf -X POST "http://localhost:$LITELLM_PORT/key/generate" \
+                -H "Authorization: Bearer $LITELLM_KEY" \
+                -H "Content-Type: application/json" \
+                -d '{"key_alias": "'"$CONTAINER_NAME"'", "duration": "24h"}' \
+                2>/dev/null) || true
+            if [ -n "$vk_response" ]; then
+                VIRTUAL_KEY=$(echo "$vk_response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('key',''))" 2>/dev/null) || VIRTUAL_KEY=""
+            fi
+
+            if [ -n "$VIRTUAL_KEY" ]; then
+                env_args+=(-e ANTHROPIC_CUSTOM_HEADERS="x-litellm-api-key: Bearer ${VIRTUAL_KEY}")
+            else
+                # Fallback: master key with user header for basic tracking
+                env_args+=(-e ANTHROPIC_CUSTOM_HEADERS="x-litellm-api-key: Bearer ${LITELLM_KEY}
+x-litellm-user: ${CONTAINER_NAME}")
+            fi
+
+            env_args+=(-e ANTHROPIC_DEFAULT_OPUS_MODEL="anthropic/claude-opus-4-6")
+            env_args+=(-e ANTHROPIC_DEFAULT_SONNET_MODEL="anthropic/claude-sonnet-4-6")
+            env_args+=(-e ANTHROPIC_DEFAULT_HAIKU_MODEL="anthropic/claude-haiku-4-5")
+            litellm_connected=true
+        fi
+    fi
+fi
+
+# Clean up virtual key on exit
+cleanup_virtual_key() {
+    if [ -n "${VIRTUAL_KEY:-}" ]; then
+        curl -sf -X POST "http://localhost:${LITELLM_PORT:-4000}/key/delete" \
+            -H "Authorization: Bearer $LITELLM_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"keys": ["'"$VIRTUAL_KEY"'"]}' \
+            >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_virtual_key EXIT
+
 # --- Print session info ---
 echo ""
 echo -e "\033[1;34m=========================================\033[0m"
@@ -394,6 +452,15 @@ echo -e "  GPU:       \033[32menabled\033[0m"
 fi
 if $no_network; then
 echo -e "  Network:   \033[31mdisabled\033[0m"
+fi
+if $litellm_connected; then
+    if [ -n "$VIRTUAL_KEY" ]; then
+echo -e "  LiteLLM:   \033[32mconnected\033[0m (virtual key: $CONTAINER_NAME)"
+    else
+echo -e "  LiteLLM:   \033[33mconnected\033[0m (master key fallback)"
+    fi
+elif ! $no_litellm && ! $no_network; then
+echo -e "  LiteLLM:   \033[90mnot detected\033[0m"
 fi
 if [ "$nix_mode" = "copy" ]; then
 echo -e "  Nix:       \033[33mcopy (per-project + shared cache)\033[0m"

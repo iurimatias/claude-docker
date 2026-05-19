@@ -68,6 +68,7 @@ When run without extra arguments, you get an interactive Claude Code CLI session
 | `-HH` | Horizontal split with host terminal |
 | `-VV` | Vertical split with host terminal |
 | `--sessions` | List and manage saved sessions |
+| `--no-litellm` | Skip LiteLLM proxy even if one is running |
 | `--rebuild` | Force rebuild the Docker image |
 | `-h, --help` | Show help message |
 
@@ -197,6 +198,26 @@ Copy or move files there, then reference them in Claude by their full path (e.g.
 ## Auto-Rebuild
 
 The image is rebuilt automatically when the Dockerfile changes — no need to manually run `docker build`. Use `--rebuild` to force a rebuild at any time.
+
+## LiteLLM Proxy (Token Tracking)
+
+A shared [LiteLLM](https://docs.litellm.ai/) proxy is included in the `litellm/` folder. It gives you per-request token counts and cumulative usage tracking — including on **Max/Pro subscriptions** where Claude Code doesn't show costs natively.
+
+```bash
+# Start the proxy (once — it stays running across sessions)
+./litellm/start.sh
+
+# claude.sh auto-connects when LiteLLM is running
+claude-docker /path/to/project
+
+# Check usage stats
+./litellm/status.sh
+
+# Or open the dashboard
+open http://localhost:4000/ui
+```
+
+Multiple containers (claude-docker, opencode-docker, etc.) share a single LiteLLM instance on a common Docker network. See [`litellm/README.md`](litellm/README.md) for details.
 
 ## Tips
 
